@@ -70,6 +70,11 @@ select {
   padding-bottom: 1.35rem;
 }
 
+.hero-layout {
+  display: grid;
+  gap: 1rem;
+}
+
 .eyebrow {
   display: inline-block;
   margin-bottom: 0.6rem;
@@ -102,6 +107,41 @@ select {
   line-height: 1.5;
 }
 
+.hero-stats {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.stat-card {
+  border-radius: 1.2rem;
+  padding: 0.95rem 1rem;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(247, 235, 219, 0.92));
+  border: 1px solid rgba(143, 69, 18, 0.12);
+}
+
+.stat-card span,
+.micro-stat span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.76rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.stat-card strong,
+.micro-stat strong {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 1.1rem;
+  line-height: 1.15;
+}
+
+.stat-card-wide {
+  background:
+    linear-gradient(145deg, rgba(201, 107, 22, 0.14), rgba(255, 255, 255, 0.94));
+}
+
 .section-heading {
   display: flex;
   align-items: flex-start;
@@ -130,6 +170,21 @@ select {
   gap: 0.65rem;
   color: var(--text);
   font-weight: 700;
+  border-radius: 1.2rem;
+  padding: 1rem;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(248, 236, 220, 0.9));
+  border: 1px solid rgba(143, 69, 18, 0.12);
+}
+
+.file-picker-title {
+  font-size: 1rem;
+}
+
+.file-picker-caption {
+  color: var(--muted);
+  font-size: 0.92rem;
+  font-weight: 500;
 }
 
 .file-picker input[type="file"] {
@@ -138,6 +193,20 @@ select {
   border-radius: 1rem;
   padding: 0.9rem;
   background: rgba(255, 255, 255, 0.9);
+}
+
+.micro-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.95rem;
+}
+
+.micro-stat {
+  border-radius: 1rem;
+  padding: 0.8rem 0.85rem;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(95, 108, 119, 0.08);
 }
 
 .supporting-text,
@@ -166,6 +235,54 @@ select {
 .controls-grid {
   display: grid;
   gap: 0.9rem;
+}
+
+.toggle-grid {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.toggle-group {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.toggle-label {
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.segmented-control {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.segment-button {
+  min-height: 2.85rem;
+  border: 1px solid rgba(95, 108, 119, 0.14);
+  border-radius: 999px;
+  padding: 0.7rem 1rem;
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--muted);
+  font-weight: 700;
+  transition:
+    transform 180ms ease,
+    background 180ms ease,
+    color 180ms ease,
+    border-color 180ms ease;
+}
+
+.segment-button:disabled {
+  opacity: 0.52;
+}
+
+.segment-button-active {
+  background: linear-gradient(135deg, var(--accent), #de8b3e);
+  border-color: transparent;
+  color: white;
+  transform: translateY(-1px);
 }
 
 .control {
@@ -209,6 +326,16 @@ select {
 .chart-card {
   display: grid;
   gap: 1rem;
+}
+
+.result-kicker {
+  margin-bottom: 1rem;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.result-kicker strong {
+  color: var(--accent-deep);
 }
 
 .chart-header {
@@ -285,5 +412,10 @@ select {
 
   .controls-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .hero-layout {
+    grid-template-columns: minmax(0, 1.5fr) minmax(16rem, 0.9fr);
+    align-items: end;
   }
 }

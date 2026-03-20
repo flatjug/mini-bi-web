@@ -64,6 +64,8 @@ export default function HomePage() {
   });
 
   const isReady = columns.length > 0;
+  const chartOptionLabel =
+    chartOptions.find((option) => option.value === chartType)?.label ?? chartType;
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -122,15 +124,34 @@ export default function HomePage() {
   return (
     <main className="page-shell">
       <section className="hero panel">
-        <span className="eyebrow">Pocket BI</span>
-        <h1>CSV charts that stay on your device.</h1>
-        <p className="hero-copy">
-          Upload a CSV, choose the columns you want to compare, and switch between bar,
-          line, pie, or table views in one screen.
-        </p>
-        <div className="privacy-note">
-          <strong>Privacy:</strong> your CSV is parsed in this browser only and is never
-          uploaded by this app.
+        <div className="hero-layout">
+          <div>
+            <span className="eyebrow">Pocket BI</span>
+            <h1>CSV charts that stay on your device.</h1>
+            <p className="hero-copy">
+              Upload a CSV, choose the columns you want to compare, and switch between
+              bar, line, pie, or table views in one screen.
+            </p>
+            <div className="privacy-note">
+              <strong>Privacy:</strong> your CSV is parsed in this browser only and is
+              never uploaded by this app.
+            </div>
+          </div>
+
+          <div className="hero-stats">
+            <div className="stat-card">
+              <span>Rows</span>
+              <strong>{rows.length.toLocaleString()}</strong>
+            </div>
+            <div className="stat-card">
+              <span>Columns</span>
+              <strong>{columns.length.toLocaleString()}</strong>
+            </div>
+            <div className="stat-card stat-card-wide">
+              <span>Current view</span>
+              <strong>{isReady ? chartOptionLabel : "Waiting for CSV"}</strong>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -144,14 +165,27 @@ export default function HomePage() {
         </div>
 
         <label className="file-picker">
-          <span>Select CSV</span>
+          <span className="file-picker-title">Select a CSV file</span>
+          <span className="file-picker-caption">
+            Tap to browse from Files. Header row is required.
+          </span>
           <input accept=".csv,text/csv" onChange={handleFileChange} type="file" />
         </label>
 
-        <p className="supporting-text">
-          Header row is required. The file stays in memory on this device while you are
-          using the page.
-        </p>
+        <div className="micro-stats">
+          <div className="micro-stat">
+            <span>Privacy</span>
+            <strong>Local only</strong>
+          </div>
+          <div className="micro-stat">
+            <span>Storage</span>
+            <strong>In-memory</strong>
+          </div>
+          <div className="micro-stat">
+            <span>Ready for charts</span>
+            <strong>{isReady ? "Yes" : "Not yet"}</strong>
+          </div>
+        </div>
 
         <p className={`message ${parseMessage?.startsWith("CSVの読み込みに失敗") ? "message-error" : ""}`}>
           {parseMessage ?? "No file selected yet."}
@@ -201,36 +235,42 @@ export default function HomePage() {
               ))}
             </select>
           </label>
+        </div>
 
-          <label className="control">
-            <span>Aggregation</span>
-            <select
-              disabled={!isReady}
-              onChange={(event) => setAggregation(event.target.value as AggregationType)}
-              value={aggregation}
-            >
+        <div className="toggle-grid">
+          <div className="toggle-group">
+            <span className="toggle-label">Aggregation</span>
+            <div className="segmented-control" aria-label="Aggregation selector">
               {aggregationOptions.map((option) => (
-                <option key={option.value} value={option.value}>
+                <button
+                  className={`segment-button ${aggregation === option.value ? "segment-button-active" : ""}`}
+                  disabled={!isReady}
+                  key={option.value}
+                  onClick={() => setAggregation(option.value)}
+                  type="button"
+                >
                   {option.label}
-                </option>
+                </button>
               ))}
-            </select>
-          </label>
+            </div>
+          </div>
 
-          <label className="control">
-            <span>View type</span>
-            <select
-              disabled={!isReady}
-              onChange={(event) => setChartType(event.target.value as ChartType)}
-              value={chartType}
-            >
+          <div className="toggle-group">
+            <span className="toggle-label">View type</span>
+            <div className="segmented-control" aria-label="Chart type selector">
               {chartOptions.map((option) => (
-                <option key={option.value} value={option.value}>
+                <button
+                  className={`segment-button ${chartType === option.value ? "segment-button-active" : ""}`}
+                  disabled={!isReady}
+                  key={option.value}
+                  onClick={() => setChartType(option.value)}
+                  type="button"
+                >
                   {option.label}
-                </option>
+                </button>
               ))}
-            </select>
-          </label>
+            </div>
+          </div>
         </div>
 
         {aggregation === "count" ? (
@@ -252,12 +292,26 @@ export default function HomePage() {
             <p>Upload a CSV to unlock the chart preview.</p>
           </div>
         ) : (
-          <ChartDisplay
-            chartType={chartType}
-            data={aggregatedData}
-            valueLabel={getValueLabel(aggregation, yColumn)}
-            xLabel={xColumn || "Category"}
-          />
+          <>
+            <p className="result-kicker">
+              Showing <strong>{chartOptionLabel}</strong> for <strong>{xColumn || "Category"}</strong>
+              {aggregation === "count" ? (
+                <> grouped by row count.</>
+              ) : (
+                <>
+                  {" "}
+                  against <strong>{yColumn || "Value"}</strong> using{" "}
+                  <strong>{aggregation}</strong>.
+                </>
+              )}
+            </p>
+            <ChartDisplay
+              chartType={chartType}
+              data={aggregatedData}
+              valueLabel={getValueLabel(aggregation, yColumn)}
+              xLabel={xColumn || "Category"}
+            />
+          </>
         )}
       </section>
     </main>

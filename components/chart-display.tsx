@@ -120,7 +120,9 @@ export default function ChartDisplay({
     <div className="chart-card">
       <div className="chart-header">
         <span>{xLabel}</span>
-        <span>{valueLabel}</span>
+        <span>
+          {data.length.toLocaleString()} groups · {valueLabel}
+        </span>
       </div>
 
       {chartType === "table" ? (
