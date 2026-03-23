@@ -35,6 +35,17 @@ const chartOptions: Array<{ label: string; value: ChartType }> = [
   { label: "表", value: "table" },
 ];
 
+const sampleCsv = `region,month,sales,orders
+Tokyo,Jan,120000,42
+Tokyo,Feb,98000,36
+Tokyo,Mar,143000,51
+Osaka,Jan,87000,31
+Osaka,Feb,91000,34
+Osaka,Mar,109000,38
+Nagoya,Jan,76000,28
+Nagoya,Feb,83000,29
+Nagoya,Mar,92000,33`;
+
 type MenuTab = "file" | "settings" | "save";
 
 type SavedView = {
@@ -160,6 +171,19 @@ function getChartOptionLabel(chartType: ChartType) {
   return chartOptions.find((option) => option.value === chartType)?.label ?? chartType;
 }
 
+function formatTimestamp(isoString: string) {
+  try {
+    return new Intl.DateTimeFormat("ja-JP", {
+      month: "numeric",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(isoString));
+  } catch {
+    return isoString;
+  }
+}
+
 export default function HomePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -186,6 +210,7 @@ export default function HomePage() {
   });
 
   const isReady = columns.length > 0;
+  const namedViewExists = savedViews.some((view) => view.id === viewName.trim());
 
   useEffect(() => {
     const nextSavedViews = loadStoredViews(SAVED_VIEWS_KEY);
@@ -194,15 +219,7 @@ export default function HomePage() {
     setSavedViews(nextSavedViews);
 
     if (sessionView) {
-      setRows(sessionView.rows);
-      setColumns(sessionView.columns);
-      setFileName(sessionView.fileName);
-      setXColumn(sessionView.xColumn);
-      setYColumn(sessionView.yColumn);
-      setAggregation(sessionView.aggregation);
-      setChartLayout(sessionView.chartLayout);
-      setViewName(sessionView.name);
-      setParseMessage(`前回の作業内容「${sessionView.name}」を復元しました。`);
+      applyViewState(sessionView, true);
       setActiveMenu(null);
     }
 
@@ -249,6 +266,49 @@ export default function HomePage() {
     window.localStorage.setItem(SAVED_VIEWS_KEY, JSON.stringify(savedViews));
   }, [isHydrated, savedViews]);
 
+  function applyViewState(view: SavedView, isSessionRestore = false) {
+    setRows(view.rows);
+    setColumns(view.columns);
+    setFileName(view.fileName);
+    setXColumn(view.xColumn);
+    setYColumn(view.yColumn);
+    setAggregation(view.aggregation);
+    setChartLayout(view.chartLayout);
+    setViewName(view.name);
+    setParseMessage(
+      isSessionRestore
+        ? `前回の作業内容「${view.name}」を復元しました。`
+        : `保存済みビュー「${view.name}」を読み込みました。`,
+    );
+  }
+
+  function loadCsvRows(nextRows: CsvRow[], nextFileName: string, nextMessage: string) {
+    const nextColumns = extractColumns(nextRows);
+    const nextXColumn = nextColumns[0] ?? "";
+    const nextYColumn = nextColumns[1] ?? nextColumns[0] ?? "";
+
+    if (nextRows.length === 0 || nextColumns.length === 0) {
+      setRows([]);
+      setColumns([]);
+      setFileName(nextFileName);
+      setXColumn("");
+      setYColumn("");
+      setParseMessage("CSVから読み取れる行がありませんでした。ヘッダ付きのCSVを選んでください。");
+      return;
+    }
+
+    setRows(nextRows);
+    setColumns(nextColumns);
+    setFileName(nextFileName);
+    setXColumn(nextXColumn);
+    setYColumn(nextYColumn);
+    setAggregation("count");
+    setChartLayout(DEFAULT_CHART_LAYOUT);
+    setSaveMessage(null);
+    setParseMessage(nextMessage);
+    setActiveMenu(null);
+  }
+
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
 
@@ -263,36 +323,21 @@ export default function HomePage() {
       skipEmptyLines: true,
       complete: (results) => {
         const nextRows = normalizeCsvRows(results.data);
-        const nextColumns = extractColumns(nextRows);
-        const nextXColumn = nextColumns[0] ?? "";
-        const nextYColumn = nextColumns[1] ?? nextColumns[0] ?? "";
-
-        if (nextRows.length === 0 || nextColumns.length === 0) {
-          setRows([]);
-          setColumns([]);
-          setFileName(file.name);
-          setXColumn("");
-          setYColumn("");
-          setParseMessage("CSVから読み取れる行がありませんでした。ヘッダ付きのCSVを選んでください。");
-          return;
-        }
-
-        setRows(nextRows);
-        setColumns(nextColumns);
-        setFileName(file.name);
-        setXColumn(nextXColumn);
-        setYColumn(nextYColumn);
-        setAggregation("count");
-        setChartLayout(DEFAULT_CHART_LAYOUT);
-        setSaveMessage(null);
-        setActiveMenu(null);
 
         if (results.errors.length > 0) {
-          setParseMessage(`一部の行を読み飛ばしました: ${results.errors[0]?.message ?? "不明な解析エラー"}`);
+          loadCsvRows(
+            nextRows,
+            file.name,
+            `一部の行を読み飛ばしました: ${results.errors[0]?.message ?? "不明な解析エラー"}`,
+          );
           return;
         }
 
-        setParseMessage(`${file.name} を読み込みました。${nextRows.length.toLocaleString()} 行のデータを利用できます。`);
+        loadCsvRows(
+          nextRows,
+          file.name,
+          `${file.name} を読み込みました。${nextRows.length.toLocaleString()} 行のデータを利用できます。`,
+        );
       },
       error: (error) => {
         setRows([]);
@@ -305,20 +350,24 @@ export default function HomePage() {
     });
   };
 
+  const loadSampleData = () => {
+    Papa.parse<Record<string, unknown>>(sampleCsv, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => {
+        const nextRows = normalizeCsvRows(results.data);
+        loadCsvRows(nextRows, "sample-sales.csv", "サンプルデータを読み込みました。");
+        setViewName("サンプルビュー");
+      },
+    });
+  };
+
   const applyView = (view: SavedView) => {
-    setRows(view.rows);
-    setColumns(view.columns);
-    setFileName(view.fileName);
-    setXColumn(view.xColumn);
-    setYColumn(view.yColumn);
-    setAggregation(view.aggregation);
-    setChartLayout(view.chartLayout);
-    setViewName(view.name);
-    setParseMessage(`保存済みビュー「${view.name}」を読み込みました。`);
+    applyViewState(view, false);
     setActiveMenu(null);
   };
 
-  const handleSaveView = () => {
+  const persistView = (mode: "saveAs" | "overwrite") => {
     const trimmedName = viewName.trim();
 
     if (!isReady || !trimmedName) {
@@ -339,12 +388,21 @@ export default function HomePage() {
     };
 
     setSavedViews((currentViews) => {
-      const remainingViews = currentViews.filter((view) => view.id !== nextView.id);
+      const remainingViews =
+        mode === "overwrite"
+          ? currentViews.filter((view) => view.id !== nextView.id)
+          : currentViews.filter((view) => view.id !== nextView.id);
+
       return [nextView, ...remainingViews].sort((left, right) =>
         right.updatedAt.localeCompare(left.updatedAt),
       );
     });
-    setSaveMessage(`ビュー「${trimmedName}」を保存しました。`);
+
+    setSaveMessage(
+      mode === "overwrite"
+        ? `ビュー「${trimmedName}」を上書き保存しました。`
+        : `ビュー「${trimmedName}」を保存しました。`,
+    );
   };
 
   const handleDeleteView = (viewId: string) => {
@@ -363,6 +421,8 @@ export default function HomePage() {
   const toggleMenu = (menu: MenuTab) => {
     setActiveMenu((currentMenu) => (currentMenu === menu ? null : menu));
   };
+
+  const recentViews = savedViews.slice(0, 4);
 
   return (
     <main className="app-frame">
@@ -414,44 +474,66 @@ export default function HomePage() {
         <span>{parseMessage ?? "ファイルを読み込むと3つのグラフビューが表示されます。"}</span>
       </section>
 
-      {activeMenu ? (
-        <section className="menu-panel">
-          {activeMenu === "file" ? (
-            <div className="menu-panel-grid">
-              <div className="menu-copy">
-                <span className="eyebrow">File</span>
-                <h2>CSVを開く</h2>
-                <p>ローカルのCSVを選択して、このブラウザ内だけで解析します。</p>
-              </div>
+      <section className="context-strip">
+        <span className="context-pill">
+          <strong>保存先:</strong> この端末のこのブラウザ
+        </span>
+        <span className="context-pill">
+          <strong>X:</strong> {xColumn || "未選択"}
+        </span>
+        <span className="context-pill">
+          <strong>Y:</strong> {aggregation === "count" ? "未使用" : yColumn || "未選択"}
+        </span>
+        <span className="context-pill">
+          <strong>集計:</strong> {aggregationOptions.find((option) => option.value === aggregation)?.label}
+        </span>
+      </section>
 
-              <div className="file-actions">
+      {activeMenu ? (
+        <section className="menu-panel compact-menu-panel">
+          {activeMenu === "file" ? (
+            <div className="menu-popover-grid">
+              <div className="menu-popover-card">
+                <span className="eyebrow">File</span>
+                <h2>ファイル</h2>
                 <button
                   className="primary-action"
                   onClick={() => fileInputRef.current?.click()}
                   type="button"
                 >
-                  CSVを選択
+                  CSVを開く
                 </button>
-                <div className="menu-note-card">
-                  <span>現在のファイル</span>
-                  <strong>{fileName || "未選択"}</strong>
-                </div>
-                <div className="menu-note-card">
-                  <span>保存範囲</span>
-                  <strong>この端末のこのブラウザ</strong>
-                </div>
+                <button className="secondary-action" onClick={loadSampleData} type="button">
+                  サンプルを試す
+                </button>
+              </div>
+
+              <div className="menu-popover-card">
+                <span className="eyebrow">Recent</span>
+                <h2>最近のビュー</h2>
+                {recentViews.length === 0 ? (
+                  <p className="popover-empty">まだ保存済みビューはありません。</p>
+                ) : (
+                  <div className="mini-list">
+                    {recentViews.map((view) => (
+                      <button
+                        className="mini-list-item"
+                        key={view.id}
+                        onClick={() => applyView(view)}
+                        type="button"
+                      >
+                        <strong>{view.name}</strong>
+                        <span>{formatTimestamp(view.updatedAt)}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           ) : null}
 
           {activeMenu === "settings" ? (
             <div className="menu-panel-stack">
-              <div className="menu-copy">
-                <span className="eyebrow">Display</span>
-                <h2>表示設定</h2>
-                <p>集計軸と3つのグラフスロットを切り替えます。</p>
-              </div>
-
               <div className="settings-grid">
                 <label className="control">
                   <span>X軸カラム</span>
@@ -526,12 +608,6 @@ export default function HomePage() {
 
           {activeMenu === "save" ? (
             <div className="menu-panel-stack">
-              <div className="menu-copy">
-                <span className="eyebrow">Save</span>
-                <h2>ビューを保存する</h2>
-                <p>現在のCSVと表示レイアウトを、このブラウザ内だけに保存します。</p>
-              </div>
-
               <div className="save-view-grid">
                 <label className="control">
                   <span>ビュー名</span>
@@ -545,18 +621,28 @@ export default function HomePage() {
                   />
                 </label>
 
-                <button
-                  className="primary-action"
-                  disabled={!isReady || !viewName.trim()}
-                  onClick={handleSaveView}
-                  type="button"
-                >
-                  保存
-                </button>
+                <div className="save-actions">
+                  <button
+                    className="primary-action"
+                    disabled={!isReady || !viewName.trim()}
+                    onClick={() => persistView("saveAs")}
+                    type="button"
+                  >
+                    名前を付けて保存
+                  </button>
+                  <button
+                    className="secondary-action"
+                    disabled={!isReady || !viewName.trim() || !namedViewExists}
+                    onClick={() => persistView("overwrite")}
+                    type="button"
+                  >
+                    上書き保存
+                  </button>
+                </div>
               </div>
 
               <p className="message">
-                {saveMessage ?? "保存すると、次回アクセス時にも前回のビューをすぐ開けます。"}
+                {saveMessage ?? "保存したビューは、このブラウザだけで保持されます。"}
               </p>
 
               {savedViews.length === 0 ? (
@@ -571,7 +657,7 @@ export default function HomePage() {
                         <strong>{view.name}</strong>
                         <span>{view.fileName || "ファイル名なし"}</span>
                         <span>
-                          {view.columns.length.toLocaleString()} カラム ・ {view.rows.length.toLocaleString()} 行
+                          {formatTimestamp(view.updatedAt)} ・ {view.columns.length.toLocaleString()} カラム
                         </span>
                       </div>
                       <div className="saved-view-actions">
@@ -606,7 +692,7 @@ export default function HomePage() {
               <span className="eyebrow">Workspace</span>
               <h1>3つのグラフビューで見比べる</h1>
               <p>
-                上の「ファイル」からCSVを開くと、同じ集計条件で3つのグラフを並べて比較できます。
+                上の「ファイル」からCSVを開くかサンプルを試すと、同じ集計条件で3つのグラフを並べて比較できます。
               </p>
             </div>
           </div>
@@ -615,8 +701,14 @@ export default function HomePage() {
             {chartLayout.map((chartType, index) => (
               <section className="chart-window" key={`${chartType}-${index}`}>
                 <div className="chart-window-bar">
-                  <span>グラフ {index + 1}</span>
-                  <strong>{getChartOptionLabel(chartType)}</strong>
+                  <div>
+                    <span>グラフ {index + 1}</span>
+                    <strong>{getChartOptionLabel(chartType)}</strong>
+                  </div>
+                  <span className="chart-window-meta">
+                    {xColumn || "カテゴリ"} /{" "}
+                    {aggregationOptions.find((option) => option.value === aggregation)?.label}
+                  </span>
                 </div>
                 <ChartDisplay
                   chartType={chartType}
