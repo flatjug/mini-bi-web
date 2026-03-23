@@ -1,7 +1,7 @@
 "use client";
 
 import type { ChangeEvent } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Papa from "papaparse";
 import {
@@ -16,7 +16,7 @@ import {
 const ChartDisplay = dynamic(() => import("../components/chart-display"), {
   ssr: false,
   loading: () => (
-    <div className="panel placeholder">
+    <div className="placeholder workspace-placeholder">
       <p>グラフ表示を準備しています...</p>
     </div>
   ),
@@ -35,6 +35,8 @@ const chartOptions: Array<{ label: string; value: ChartType }> = [
   { label: "表", value: "table" },
 ];
 
+type MenuTab = "file" | "settings" | "save";
+
 type SavedView = {
   id: string;
   name: string;
@@ -44,32 +46,60 @@ type SavedView = {
   xColumn: string;
   yColumn: string;
   aggregation: AggregationType;
-  chartType: ChartType;
+  chartLayout: [ChartType, ChartType, ChartType];
   updatedAt: string;
 };
 
+const DEFAULT_CHART_LAYOUT: [ChartType, ChartType, ChartType] = ["bar", "line", "pie"];
 const SAVED_VIEWS_KEY = "pocket-bi.saved-views";
 const SESSION_VIEW_KEY = "pocket-bi.session-view";
 
-function isSavedView(value: unknown): value is SavedView {
+function isChartType(value: unknown): value is ChartType {
+  return value === "bar" || value === "line" || value === "pie" || value === "table";
+}
+
+function normalizeStoredView(value: unknown) {
   if (!value || typeof value !== "object") {
-    return false;
+    return null as SavedView | null;
   }
 
-  const view = value as Partial<SavedView>;
+  const view = value as Partial<SavedView> & { chartType?: unknown };
+  const chartLayout =
+    Array.isArray(view.chartLayout) &&
+    view.chartLayout.length === 3 &&
+    view.chartLayout.every(isChartType)
+      ? (view.chartLayout as [ChartType, ChartType, ChartType])
+      : isChartType(view.chartType)
+        ? ([view.chartType, "line", "pie"] as [ChartType, ChartType, ChartType])
+        : null;
 
-  return (
-    typeof view.id === "string" &&
-    typeof view.name === "string" &&
-    typeof view.fileName === "string" &&
-    Array.isArray(view.rows) &&
-    Array.isArray(view.columns) &&
-    typeof view.xColumn === "string" &&
-    typeof view.yColumn === "string" &&
-    typeof view.aggregation === "string" &&
-    typeof view.chartType === "string" &&
-    typeof view.updatedAt === "string"
-  );
+  if (
+    typeof view.id !== "string" ||
+    typeof view.name !== "string" ||
+    typeof view.fileName !== "string" ||
+    !Array.isArray(view.rows) ||
+    !Array.isArray(view.columns) ||
+    typeof view.xColumn !== "string" ||
+    typeof view.yColumn !== "string" ||
+    typeof view.aggregation !== "string" ||
+    typeof view.updatedAt !== "string" ||
+    !chartLayout
+  ) {
+    return null;
+  }
+
+  return {
+    id: view.id,
+    name: view.name,
+    fileName: view.fileName,
+    rows: view.rows,
+    columns: view.columns,
+    xColumn: view.xColumn,
+    yColumn: view.yColumn,
+    aggregation: view.aggregation as AggregationType,
+    chartLayout,
+    updatedAt: view.updatedAt,
+  };
 }
 
 function loadStoredViews(storageKey: string) {
@@ -90,7 +120,7 @@ function loadStoredViews(storageKey: string) {
       return [] as SavedView[];
     }
 
-    return parsed.filter(isSavedView);
+    return parsed.map(normalizeStoredView).filter((view): view is SavedView => view !== null);
   } catch {
     return [] as SavedView[];
   }
@@ -108,8 +138,7 @@ function loadStoredSession() {
       return null;
     }
 
-    const parsed = JSON.parse(raw) as unknown;
-    return isSavedView(parsed) ? parsed : null;
+    return normalizeStoredView(JSON.parse(raw));
   } catch {
     return null;
   }
@@ -127,7 +156,13 @@ function getValueLabel(aggregation: AggregationType, yColumn: string) {
   return `${yColumn}の${aggregationOptions.find((option) => option.value === aggregation)?.label ?? aggregation}`;
 }
 
+function getChartOptionLabel(chartType: ChartType) {
+  return chartOptions.find((option) => option.value === chartType)?.label ?? chartType;
+}
+
 export default function HomePage() {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [rows, setRows] = useState<CsvRow[]>([]);
   const [columns, setColumns] = useState<string[]>([]);
   const [fileName, setFileName] = useState("");
@@ -135,10 +170,13 @@ export default function HomePage() {
   const [xColumn, setXColumn] = useState("");
   const [yColumn, setYColumn] = useState("");
   const [aggregation, setAggregation] = useState<AggregationType>("count");
-  const [chartType, setChartType] = useState<ChartType>("bar");
+  const [chartLayout, setChartLayout] = useState<[ChartType, ChartType, ChartType]>(
+    DEFAULT_CHART_LAYOUT,
+  );
   const [viewName, setViewName] = useState("");
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [activeMenu, setActiveMenu] = useState<MenuTab | null>("file");
   const [isHydrated, setIsHydrated] = useState(false);
 
   const aggregatedData = aggregateData(rows, {
@@ -148,8 +186,6 @@ export default function HomePage() {
   });
 
   const isReady = columns.length > 0;
-  const chartOptionLabel =
-    chartOptions.find((option) => option.value === chartType)?.label ?? chartType;
 
   useEffect(() => {
     const nextSavedViews = loadStoredViews(SAVED_VIEWS_KEY);
@@ -164,9 +200,10 @@ export default function HomePage() {
       setXColumn(sessionView.xColumn);
       setYColumn(sessionView.yColumn);
       setAggregation(sessionView.aggregation);
-      setChartType(sessionView.chartType);
-      setParseMessage(`前回の作業内容「${sessionView.name}」を復元しました。`);
+      setChartLayout(sessionView.chartLayout);
       setViewName(sessionView.name);
+      setParseMessage(`前回の作業内容「${sessionView.name}」を復元しました。`);
+      setActiveMenu(null);
     }
 
     setIsHydrated(true);
@@ -186,12 +223,23 @@ export default function HomePage() {
       xColumn,
       yColumn,
       aggregation,
-      chartType,
+      chartLayout,
       updatedAt: new Date().toISOString(),
     };
 
     window.localStorage.setItem(SESSION_VIEW_KEY, JSON.stringify(sessionView));
-  }, [aggregation, chartType, columns, fileName, isHydrated, isReady, rows, viewName, xColumn, yColumn]);
+  }, [
+    aggregation,
+    chartLayout,
+    columns,
+    fileName,
+    isHydrated,
+    isReady,
+    rows,
+    viewName,
+    xColumn,
+    yColumn,
+  ]);
 
   useEffect(() => {
     if (!isHydrated || typeof window === "undefined") {
@@ -200,52 +248,6 @@ export default function HomePage() {
 
     window.localStorage.setItem(SAVED_VIEWS_KEY, JSON.stringify(savedViews));
   }, [isHydrated, savedViews]);
-
-  const applyView = (view: SavedView) => {
-    setRows(view.rows);
-    setColumns(view.columns);
-    setFileName(view.fileName);
-    setXColumn(view.xColumn);
-    setYColumn(view.yColumn);
-    setAggregation(view.aggregation);
-    setChartType(view.chartType);
-    setViewName(view.name);
-    setParseMessage(`保存済みビュー「${view.name}」を読み込みました。`);
-  };
-
-  const handleSaveView = () => {
-    const trimmedName = viewName.trim();
-
-    if (!isReady || !trimmedName) {
-      return;
-    }
-
-    const nextView: SavedView = {
-      id: trimmedName,
-      name: trimmedName,
-      fileName,
-      rows,
-      columns,
-      xColumn,
-      yColumn,
-      aggregation,
-      chartType,
-      updatedAt: new Date().toISOString(),
-    };
-
-    setSavedViews((currentViews) => {
-      const remainingViews = currentViews.filter((view) => view.id !== nextView.id);
-      return [nextView, ...remainingViews].sort((left, right) =>
-        right.updatedAt.localeCompare(left.updatedAt),
-      );
-    });
-    setSaveMessage(`ビュー「${trimmedName}」を保存しました。`);
-  };
-
-  const handleDeleteView = (viewId: string) => {
-    setSavedViews((currentViews) => currentViews.filter((view) => view.id !== viewId));
-    setSaveMessage("保存済みビューを削除しました。");
-  };
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -281,8 +283,9 @@ export default function HomePage() {
         setXColumn(nextXColumn);
         setYColumn(nextYColumn);
         setAggregation("count");
-        setChartType("bar");
+        setChartLayout(DEFAULT_CHART_LAYOUT);
         setSaveMessage(null);
+        setActiveMenu(null);
 
         if (results.errors.length > 0) {
           setParseMessage(`一部の行を読み飛ばしました: ${results.errors[0]?.message ?? "不明な解析エラー"}`);
@@ -302,269 +305,328 @@ export default function HomePage() {
     });
   };
 
+  const applyView = (view: SavedView) => {
+    setRows(view.rows);
+    setColumns(view.columns);
+    setFileName(view.fileName);
+    setXColumn(view.xColumn);
+    setYColumn(view.yColumn);
+    setAggregation(view.aggregation);
+    setChartLayout(view.chartLayout);
+    setViewName(view.name);
+    setParseMessage(`保存済みビュー「${view.name}」を読み込みました。`);
+    setActiveMenu(null);
+  };
+
+  const handleSaveView = () => {
+    const trimmedName = viewName.trim();
+
+    if (!isReady || !trimmedName) {
+      return;
+    }
+
+    const nextView: SavedView = {
+      id: trimmedName,
+      name: trimmedName,
+      fileName,
+      rows,
+      columns,
+      xColumn,
+      yColumn,
+      aggregation,
+      chartLayout,
+      updatedAt: new Date().toISOString(),
+    };
+
+    setSavedViews((currentViews) => {
+      const remainingViews = currentViews.filter((view) => view.id !== nextView.id);
+      return [nextView, ...remainingViews].sort((left, right) =>
+        right.updatedAt.localeCompare(left.updatedAt),
+      );
+    });
+    setSaveMessage(`ビュー「${trimmedName}」を保存しました。`);
+  };
+
+  const handleDeleteView = (viewId: string) => {
+    setSavedViews((currentViews) => currentViews.filter((view) => view.id !== viewId));
+    setSaveMessage("保存済みビューを削除しました。");
+  };
+
+  const updateChartSlot = (slotIndex: number, nextType: ChartType) => {
+    setChartLayout((currentLayout) => {
+      const nextLayout = [...currentLayout] as [ChartType, ChartType, ChartType];
+      nextLayout[slotIndex] = nextType;
+      return nextLayout;
+    });
+  };
+
+  const toggleMenu = (menu: MenuTab) => {
+    setActiveMenu((currentMenu) => (currentMenu === menu ? null : menu));
+  };
+
   return (
-    <main className="page-shell">
-      <section className="hero panel">
-        <div className="hero-layout">
-          <div>
-            <span className="eyebrow">Pocket BI</span>
-            <h1>CSVを読み込んで、その場で見える。</h1>
-            <p className="hero-copy">
-              CSVをアップロードし、見たいカラムと表示方法を選ぶだけで、グラフや表を1画面で確認できます。
-            </p>
-            <div className="privacy-note">
-              <strong>プライバシー:</strong> CSVはこのブラウザ内だけで処理され、このアプリからアップロードされません。
-            </div>
-          </div>
+    <main className="app-frame">
+      <input
+        accept=".csv,text/csv"
+        className="sr-only"
+        onChange={handleFileChange}
+        ref={fileInputRef}
+        type="file"
+      />
 
-          <div className="hero-stats">
-            <div className="stat-card">
-              <span>行数</span>
-              <strong>{rows.length.toLocaleString()}</strong>
-            </div>
-            <div className="stat-card">
-              <span>カラム数</span>
-              <strong>{columns.length.toLocaleString()}</strong>
-            </div>
-            <div className="stat-card stat-card-wide">
-              <span>現在の表示</span>
-              <strong>{isReady ? chartOptionLabel : "CSV待機中"}</strong>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="panel">
-        <div className="section-heading">
-          <div>
-            <span className="eyebrow">1. アップロード</span>
-            <h2>CSVファイルを選ぶ</h2>
-          </div>
-          {fileName ? <span className="status-chip">{fileName}</span> : null}
+      <header className="menu-bar">
+        <div className="menu-brand">
+          <span className="menu-brand-mark">Pocket BI</span>
+          <strong>{fileName || "Untitled View"}</strong>
         </div>
 
-        <label className="file-picker">
-          <span className="file-picker-title">CSVファイルを選択</span>
-          <span className="file-picker-caption">
-            「ファイル」から選択できます。ヘッダ行は必須です。
-          </span>
-          <input accept=".csv,text/csv" onChange={handleFileChange} type="file" />
-        </label>
-
-        <div className="micro-stats">
-          <div className="micro-stat">
-            <span>処理場所</span>
-            <strong>この端末内のみ</strong>
-          </div>
-          <div className="micro-stat">
-            <span>保存方法</span>
-            <strong>メモリ上のみ</strong>
-          </div>
-          <div className="micro-stat">
-            <span>表示準備</span>
-            <strong>{isReady ? "完了" : "未読込"}</strong>
-          </div>
-        </div>
-
-        <p className={`message ${parseMessage?.startsWith("CSVの読み込みに失敗") ? "message-error" : ""}`}>
-          {parseMessage ?? "まだファイルは選択されていません。"}
-        </p>
-      </section>
-
-      <section className="panel">
-        <div className="section-heading">
-          <div>
-            <span className="eyebrow">2. 設定</span>
-            <h2>カラムと表示方法を選ぶ</h2>
-          </div>
-          {rows.length > 0 ? (
-            <span className="status-chip">{rows.length.toLocaleString()} 行</span>
-          ) : null}
-        </div>
-
-        <div className="controls-grid">
-          <label className="control">
-            <span>X軸カラム</span>
-            <select
-              disabled={!isReady}
-              onChange={(event) => setXColumn(event.target.value)}
-              value={xColumn}
-            >
-              <option value="">カラムを選択</option>
-              {columns.map((column) => (
-                <option key={column} value={column}>
-                  {column}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="control">
-            <span>Y軸カラム</span>
-            <select
-              disabled={!isReady}
-              onChange={(event) => setYColumn(event.target.value)}
-              value={yColumn}
-            >
-              <option value="">カラムを選択</option>
-              {columns.map((column) => (
-                <option key={column} value={column}>
-                  {column}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <div className="toggle-grid">
-          <div className="toggle-group">
-            <span className="toggle-label">集計方法</span>
-            <div className="segmented-control" aria-label="集計方法">
-              {aggregationOptions.map((option) => (
-                <button
-                  className={`segment-button ${aggregation === option.value ? "segment-button-active" : ""}`}
-                  disabled={!isReady}
-                  key={option.value}
-                  onClick={() => setAggregation(option.value)}
-                  type="button"
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="toggle-group">
-            <span className="toggle-label">表示形式</span>
-            <div className="segmented-control" aria-label="表示形式">
-              {chartOptions.map((option) => (
-                <button
-                  className={`segment-button ${chartType === option.value ? "segment-button-active" : ""}`}
-                  disabled={!isReady}
-                  key={option.value}
-                  onClick={() => setChartType(option.value)}
-                  type="button"
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {aggregation === "count" ? (
-          <p className="hint-text">件数ではX軸カラムのみを使い、Y軸カラムは集計に使いません。</p>
-        ) : null}
-      </section>
-
-      <section className="panel">
-        <div className="section-heading">
-          <div>
-            <span className="eyebrow">3. 保存</span>
-            <h2>ビューを保存する</h2>
-          </div>
-          <span className="status-chip">{savedViews.length.toLocaleString()} 件</span>
-        </div>
-
-        <div className="save-view-grid">
-          <label className="control">
-            <span>ビュー名</span>
-            <input
-              className="text-input"
-              disabled={!isReady}
-              onChange={(event) => setViewName(event.target.value)}
-              placeholder="例: 売上サマリー"
-              type="text"
-              value={viewName}
-            />
-          </label>
-
+        <div className="menu-actions">
           <button
-            className="primary-action"
-            disabled={!isReady || !viewName.trim()}
-            onClick={handleSaveView}
+            className={`menu-button ${activeMenu === "file" ? "menu-button-active" : ""}`}
+            onClick={() => toggleMenu("file")}
             type="button"
           >
-            現在のビューを保存
+            ファイル
+          </button>
+          <button
+            className={`menu-button ${activeMenu === "settings" ? "menu-button-active" : ""}`}
+            onClick={() => toggleMenu("settings")}
+            type="button"
+          >
+            表示
+          </button>
+          <button
+            className={`menu-button ${activeMenu === "save" ? "menu-button-active" : ""}`}
+            onClick={() => toggleMenu("save")}
+            type="button"
+          >
+            保存
           </button>
         </div>
 
-        <p className="supporting-text">
-          保存したビューはこのブラウザ内だけに保持されます。次回アクセス時は前回の作業内容も自動復元されます。
-        </p>
+        <div className="menu-summary">
+          <span>{rows.length.toLocaleString()} 行</span>
+          <span>{columns.length.toLocaleString()} カラム</span>
+        </div>
+      </header>
 
-        <p className="message">{saveMessage ?? "ビュー名を付けると、現在のCSVと表示設定を保存できます。"}</p>
-
-        {savedViews.length === 0 ? (
-          <div className="placeholder compact-placeholder">
-            <p>まだ保存済みビューはありません。</p>
-          </div>
-        ) : (
-          <div className="saved-view-list">
-            {savedViews.map((view) => (
-              <article className="saved-view-card" key={view.id}>
-                <div className="saved-view-copy">
-                  <strong>{view.name}</strong>
-                  <span>{view.fileName || "ファイル名なし"}</span>
-                  <span>
-                    {view.columns.length.toLocaleString()} カラム ・ {view.rows.length.toLocaleString()} 行
-                  </span>
-                </div>
-                <div className="saved-view-actions">
-                  <button
-                    className="secondary-action"
-                    onClick={() => applyView(view)}
-                    type="button"
-                  >
-                    読み込む
-                  </button>
-                  <button
-                    className="ghost-action"
-                    onClick={() => handleDeleteView(view.id)}
-                    type="button"
-                  >
-                    削除
-                  </button>
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
+      <section className="status-bar">
+        <span>{parseMessage ?? "ファイルを読み込むと3つのグラフビューが表示されます。"}</span>
       </section>
 
-      <section className="panel">
-        <div className="section-heading">
-          <div>
-            <span className="eyebrow">4. 結果</span>
-            <h2>表示結果</h2>
-          </div>
-          {isReady ? <span className="status-chip">{chartOptionLabel}</span> : null}
-        </div>
+      {activeMenu ? (
+        <section className="menu-panel">
+          {activeMenu === "file" ? (
+            <div className="menu-panel-grid">
+              <div className="menu-copy">
+                <span className="eyebrow">File</span>
+                <h2>CSVを開く</h2>
+                <p>ローカルのCSVを選択して、このブラウザ内だけで解析します。</p>
+              </div>
 
+              <div className="file-actions">
+                <button
+                  className="primary-action"
+                  onClick={() => fileInputRef.current?.click()}
+                  type="button"
+                >
+                  CSVを選択
+                </button>
+                <div className="menu-note-card">
+                  <span>現在のファイル</span>
+                  <strong>{fileName || "未選択"}</strong>
+                </div>
+                <div className="menu-note-card">
+                  <span>保存範囲</span>
+                  <strong>この端末のこのブラウザ</strong>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {activeMenu === "settings" ? (
+            <div className="menu-panel-stack">
+              <div className="menu-copy">
+                <span className="eyebrow">Display</span>
+                <h2>表示設定</h2>
+                <p>集計軸と3つのグラフスロットを切り替えます。</p>
+              </div>
+
+              <div className="settings-grid">
+                <label className="control">
+                  <span>X軸カラム</span>
+                  <select
+                    disabled={!isReady}
+                    onChange={(event) => setXColumn(event.target.value)}
+                    value={xColumn}
+                  >
+                    <option value="">カラムを選択</option>
+                    {columns.map((column) => (
+                      <option key={column} value={column}>
+                        {column}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="control">
+                  <span>Y軸カラム</span>
+                  <select
+                    disabled={!isReady}
+                    onChange={(event) => setYColumn(event.target.value)}
+                    value={yColumn}
+                  >
+                    <option value="">カラムを選択</option>
+                    {columns.map((column) => (
+                      <option key={column} value={column}>
+                        {column}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <div className="toggle-group">
+                <span className="toggle-label">集計方法</span>
+                <div className="segmented-control" aria-label="集計方法">
+                  {aggregationOptions.map((option) => (
+                    <button
+                      className={`segment-button ${aggregation === option.value ? "segment-button-active" : ""}`}
+                      disabled={!isReady}
+                      key={option.value}
+                      onClick={() => setAggregation(option.value)}
+                      type="button"
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="settings-grid">
+                {chartLayout.map((slotType, index) => (
+                  <label className="control" key={`${slotType}-${index}`}>
+                    <span>グラフ {index + 1}</span>
+                    <select
+                      disabled={!isReady}
+                      onChange={(event) => updateChartSlot(index, event.target.value as ChartType)}
+                      value={slotType}
+                    >
+                      {chartOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {activeMenu === "save" ? (
+            <div className="menu-panel-stack">
+              <div className="menu-copy">
+                <span className="eyebrow">Save</span>
+                <h2>ビューを保存する</h2>
+                <p>現在のCSVと表示レイアウトを、このブラウザ内だけに保存します。</p>
+              </div>
+
+              <div className="save-view-grid">
+                <label className="control">
+                  <span>ビュー名</span>
+                  <input
+                    className="text-input"
+                    disabled={!isReady}
+                    onChange={(event) => setViewName(event.target.value)}
+                    placeholder="例: 売上ダッシュボード"
+                    type="text"
+                    value={viewName}
+                  />
+                </label>
+
+                <button
+                  className="primary-action"
+                  disabled={!isReady || !viewName.trim()}
+                  onClick={handleSaveView}
+                  type="button"
+                >
+                  保存
+                </button>
+              </div>
+
+              <p className="message">
+                {saveMessage ?? "保存すると、次回アクセス時にも前回のビューをすぐ開けます。"}
+              </p>
+
+              {savedViews.length === 0 ? (
+                <div className="placeholder compact-placeholder">
+                  <p>まだ保存済みビューはありません。</p>
+                </div>
+              ) : (
+                <div className="saved-view-list">
+                  {savedViews.map((view) => (
+                    <article className="saved-view-card" key={view.id}>
+                      <div className="saved-view-copy">
+                        <strong>{view.name}</strong>
+                        <span>{view.fileName || "ファイル名なし"}</span>
+                        <span>
+                          {view.columns.length.toLocaleString()} カラム ・ {view.rows.length.toLocaleString()} 行
+                        </span>
+                      </div>
+                      <div className="saved-view-actions">
+                        <button
+                          className="secondary-action"
+                          onClick={() => applyView(view)}
+                          type="button"
+                        >
+                          読み込む
+                        </button>
+                        <button
+                          className="ghost-action"
+                          onClick={() => handleDeleteView(view.id)}
+                          type="button"
+                        >
+                          削除
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
+      <section className="workspace">
         {!isReady ? (
-          <div className="placeholder">
-            <p>CSVをアップロードすると、ここにグラフや表が表示されます。</p>
+          <div className="workspace-empty">
+            <div className="workspace-empty-copy">
+              <span className="eyebrow">Workspace</span>
+              <h1>3つのグラフビューで見比べる</h1>
+              <p>
+                上の「ファイル」からCSVを開くと、同じ集計条件で3つのグラフを並べて比較できます。
+              </p>
+            </div>
           </div>
         ) : (
-          <>
-            <p className="result-kicker">
-              <strong>{xColumn || "カテゴリ"}</strong> を軸に、<strong>{chartOptionLabel}</strong> で表示しています。
-              {aggregation === "count" ? (
-                <> 件数ベースで集計しています。</>
-              ) : (
-                <>
-                  {" "}
-                  <strong>{yColumn || "値"}</strong> を <strong>{aggregationOptions.find((option) => option.value === aggregation)?.label ?? aggregation}</strong> で集計しています。
-                </>
-              )}
-            </p>
-            <ChartDisplay
-              chartType={chartType}
-              data={aggregatedData}
-              valueLabel={getValueLabel(aggregation, yColumn)}
-              xLabel={xColumn || "カテゴリ"}
-            />
-          </>
+          <div className="chart-grid">
+            {chartLayout.map((chartType, index) => (
+              <section className="chart-window" key={`${chartType}-${index}`}>
+                <div className="chart-window-bar">
+                  <span>グラフ {index + 1}</span>
+                  <strong>{getChartOptionLabel(chartType)}</strong>
+                </div>
+                <ChartDisplay
+                  chartType={chartType}
+                  data={aggregatedData}
+                  valueLabel={getValueLabel(aggregation, yColumn)}
+                  xLabel={xColumn || "カテゴリ"}
+                />
+              </section>
+            ))}
+          </div>
         )}
       </section>
     </main>
