@@ -17,34 +17,34 @@ const ChartDisplay = dynamic(() => import("../components/chart-display"), {
   ssr: false,
   loading: () => (
     <div className="panel placeholder">
-      <p>Preparing your chart area...</p>
+      <p>グラフ表示を準備しています...</p>
     </div>
   ),
 });
 
 const aggregationOptions: Array<{ label: string; value: AggregationType }> = [
-  { label: "Count", value: "count" },
-  { label: "Sum", value: "sum" },
-  { label: "Average", value: "avg" },
+  { label: "件数", value: "count" },
+  { label: "合計", value: "sum" },
+  { label: "平均", value: "avg" },
 ];
 
 const chartOptions: Array<{ label: string; value: ChartType }> = [
-  { label: "Bar", value: "bar" },
-  { label: "Line", value: "line" },
-  { label: "Pie", value: "pie" },
-  { label: "Table", value: "table" },
+  { label: "棒グラフ", value: "bar" },
+  { label: "折れ線", value: "line" },
+  { label: "円グラフ", value: "pie" },
+  { label: "表", value: "table" },
 ];
 
 function getValueLabel(aggregation: AggregationType, yColumn: string) {
   if (aggregation === "count") {
-    return "Rows";
+    return "件数";
   }
 
   if (!yColumn) {
-    return "Value";
+    return "値";
   }
 
-  return `${aggregation.toUpperCase()} of ${yColumn}`;
+  return `${yColumn}の${aggregationOptions.find((option) => option.value === aggregation)?.label ?? aggregation}`;
 }
 
 export default function HomePage() {
@@ -104,11 +104,11 @@ export default function HomePage() {
         setChartType("bar");
 
         if (results.errors.length > 0) {
-          setParseMessage(`一部の行を読み飛ばしました: ${results.errors[0]?.message ?? "Unknown parse issue"}`);
+          setParseMessage(`一部の行を読み飛ばしました: ${results.errors[0]?.message ?? "不明な解析エラー"}`);
           return;
         }
 
-        setParseMessage(`${nextRows.length.toLocaleString()} rows loaded from ${file.name}.`);
+        setParseMessage(`${file.name} を読み込みました。${nextRows.length.toLocaleString()} 行のデータを利用できます。`);
       },
       error: (error) => {
         setRows([]);
@@ -127,29 +127,27 @@ export default function HomePage() {
         <div className="hero-layout">
           <div>
             <span className="eyebrow">Pocket BI</span>
-            <h1>CSV charts that stay on your device.</h1>
+            <h1>CSVを読み込んで、その場で見える。</h1>
             <p className="hero-copy">
-              Upload a CSV, choose the columns you want to compare, and switch between
-              bar, line, pie, or table views in one screen.
+              CSVをアップロードし、見たいカラムと表示方法を選ぶだけで、グラフや表を1画面で確認できます。
             </p>
             <div className="privacy-note">
-              <strong>Privacy:</strong> your CSV is parsed in this browser only and is
-              never uploaded by this app.
+              <strong>プライバシー:</strong> CSVはこのブラウザ内だけで処理され、このアプリからアップロードされません。
             </div>
           </div>
 
           <div className="hero-stats">
             <div className="stat-card">
-              <span>Rows</span>
+              <span>行数</span>
               <strong>{rows.length.toLocaleString()}</strong>
             </div>
             <div className="stat-card">
-              <span>Columns</span>
+              <span>カラム数</span>
               <strong>{columns.length.toLocaleString()}</strong>
             </div>
             <div className="stat-card stat-card-wide">
-              <span>Current view</span>
-              <strong>{isReady ? chartOptionLabel : "Waiting for CSV"}</strong>
+              <span>現在の表示</span>
+              <strong>{isReady ? chartOptionLabel : "CSV待機中"}</strong>
             </div>
           </div>
         </div>
@@ -158,60 +156,60 @@ export default function HomePage() {
       <section className="panel">
         <div className="section-heading">
           <div>
-            <span className="eyebrow">1. Upload</span>
-            <h2>Choose a CSV file</h2>
+            <span className="eyebrow">1. アップロード</span>
+            <h2>CSVファイルを選ぶ</h2>
           </div>
           {fileName ? <span className="status-chip">{fileName}</span> : null}
         </div>
 
         <label className="file-picker">
-          <span className="file-picker-title">Select a CSV file</span>
+          <span className="file-picker-title">CSVファイルを選択</span>
           <span className="file-picker-caption">
-            Tap to browse from Files. Header row is required.
+            「ファイル」から選択できます。ヘッダ行は必須です。
           </span>
           <input accept=".csv,text/csv" onChange={handleFileChange} type="file" />
         </label>
 
         <div className="micro-stats">
           <div className="micro-stat">
-            <span>Privacy</span>
-            <strong>Local only</strong>
+            <span>処理場所</span>
+            <strong>この端末内のみ</strong>
           </div>
           <div className="micro-stat">
-            <span>Storage</span>
-            <strong>In-memory</strong>
+            <span>保存方法</span>
+            <strong>メモリ上のみ</strong>
           </div>
           <div className="micro-stat">
-            <span>Ready for charts</span>
-            <strong>{isReady ? "Yes" : "Not yet"}</strong>
+            <span>表示準備</span>
+            <strong>{isReady ? "完了" : "未読込"}</strong>
           </div>
         </div>
 
         <p className={`message ${parseMessage?.startsWith("CSVの読み込みに失敗") ? "message-error" : ""}`}>
-          {parseMessage ?? "No file selected yet."}
+          {parseMessage ?? "まだファイルは選択されていません。"}
         </p>
       </section>
 
       <section className="panel">
         <div className="section-heading">
           <div>
-            <span className="eyebrow">2. Configure</span>
-            <h2>Pick your columns and chart</h2>
+            <span className="eyebrow">2. 設定</span>
+            <h2>カラムと表示方法を選ぶ</h2>
           </div>
           {rows.length > 0 ? (
-            <span className="status-chip">{rows.length.toLocaleString()} rows</span>
+            <span className="status-chip">{rows.length.toLocaleString()} 行</span>
           ) : null}
         </div>
 
         <div className="controls-grid">
           <label className="control">
-            <span>X axis column</span>
+            <span>X軸カラム</span>
             <select
               disabled={!isReady}
               onChange={(event) => setXColumn(event.target.value)}
               value={xColumn}
             >
-              <option value="">Select a column</option>
+              <option value="">カラムを選択</option>
               {columns.map((column) => (
                 <option key={column} value={column}>
                   {column}
@@ -221,13 +219,13 @@ export default function HomePage() {
           </label>
 
           <label className="control">
-            <span>Y axis column</span>
+            <span>Y軸カラム</span>
             <select
               disabled={!isReady}
               onChange={(event) => setYColumn(event.target.value)}
               value={yColumn}
             >
-              <option value="">Select a column</option>
+              <option value="">カラムを選択</option>
               {columns.map((column) => (
                 <option key={column} value={column}>
                   {column}
@@ -239,8 +237,8 @@ export default function HomePage() {
 
         <div className="toggle-grid">
           <div className="toggle-group">
-            <span className="toggle-label">Aggregation</span>
-            <div className="segmented-control" aria-label="Aggregation selector">
+            <span className="toggle-label">集計方法</span>
+            <div className="segmented-control" aria-label="集計方法">
               {aggregationOptions.map((option) => (
                 <button
                   className={`segment-button ${aggregation === option.value ? "segment-button-active" : ""}`}
@@ -256,8 +254,8 @@ export default function HomePage() {
           </div>
 
           <div className="toggle-group">
-            <span className="toggle-label">View type</span>
-            <div className="segmented-control" aria-label="Chart type selector">
+            <span className="toggle-label">表示形式</span>
+            <div className="segmented-control" aria-label="表示形式">
               {chartOptions.map((option) => (
                 <button
                   className={`segment-button ${chartType === option.value ? "segment-button-active" : ""}`}
@@ -274,34 +272,33 @@ export default function HomePage() {
         </div>
 
         {aggregation === "count" ? (
-          <p className="hint-text">Count uses only the X column and ignores the Y column.</p>
+          <p className="hint-text">件数ではX軸カラムのみを使い、Y軸カラムは集計に使いません。</p>
         ) : null}
       </section>
 
       <section className="panel">
         <div className="section-heading">
           <div>
-            <span className="eyebrow">3. Result</span>
-            <h2>View the output</h2>
+            <span className="eyebrow">3. 結果</span>
+            <h2>表示結果</h2>
           </div>
           {isReady ? <span className="status-chip">{chartType.toUpperCase()}</span> : null}
         </div>
 
         {!isReady ? (
           <div className="placeholder">
-            <p>Upload a CSV to unlock the chart preview.</p>
+            <p>CSVをアップロードすると、ここにグラフや表が表示されます。</p>
           </div>
         ) : (
           <>
             <p className="result-kicker">
-              Showing <strong>{chartOptionLabel}</strong> for <strong>{xColumn || "Category"}</strong>
+              <strong>{xColumn || "カテゴリ"}</strong> を軸に、<strong>{chartOptionLabel}</strong> で表示しています。
               {aggregation === "count" ? (
-                <> grouped by row count.</>
+                <> 件数ベースで集計しています。</>
               ) : (
                 <>
                   {" "}
-                  against <strong>{yColumn || "Value"}</strong> using{" "}
-                  <strong>{aggregation}</strong>.
+                  <strong>{yColumn || "値"}</strong> を <strong>{aggregationOptions.find((option) => option.value === aggregation)?.label ?? aggregation}</strong> で集計しています。
                 </>
               )}
             </p>

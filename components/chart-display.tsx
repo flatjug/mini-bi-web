@@ -35,7 +35,7 @@ function formatValue(value: number) {
 function EmptyState() {
   return (
     <div className="placeholder">
-      <p>No chartable output yet. Try another column pair or switch the aggregation mode.</p>
+      <p>表示できる集計結果がありません。別のカラムや集計方法を試してください。</p>
     </div>
   );
 }
@@ -121,7 +121,7 @@ export default function ChartDisplay({
       <div className="chart-header">
         <span>{xLabel}</span>
         <span>
-          {data.length.toLocaleString()} groups · {valueLabel}
+          {data.length.toLocaleString()} グループ ・ {valueLabel}
         </span>
       </div>
 
