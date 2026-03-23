@@ -1,7 +1,7 @@
 "use client";
 
 import type { ChangeEvent } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import Papa from "papaparse";
 import {
@@ -35,6 +35,86 @@ const chartOptions: Array<{ label: string; value: ChartType }> = [
   { label: "表", value: "table" },
 ];
 
+type SavedView = {
+  id: string;
+  name: string;
+  fileName: string;
+  rows: CsvRow[];
+  columns: string[];
+  xColumn: string;
+  yColumn: string;
+  aggregation: AggregationType;
+  chartType: ChartType;
+  updatedAt: string;
+};
+
+const SAVED_VIEWS_KEY = "pocket-bi.saved-views";
+const SESSION_VIEW_KEY = "pocket-bi.session-view";
+
+function isSavedView(value: unknown): value is SavedView {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const view = value as Partial<SavedView>;
+
+  return (
+    typeof view.id === "string" &&
+    typeof view.name === "string" &&
+    typeof view.fileName === "string" &&
+    Array.isArray(view.rows) &&
+    Array.isArray(view.columns) &&
+    typeof view.xColumn === "string" &&
+    typeof view.yColumn === "string" &&
+    typeof view.aggregation === "string" &&
+    typeof view.chartType === "string" &&
+    typeof view.updatedAt === "string"
+  );
+}
+
+function loadStoredViews(storageKey: string) {
+  if (typeof window === "undefined") {
+    return [] as SavedView[];
+  }
+
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+
+    if (!raw) {
+      return [] as SavedView[];
+    }
+
+    const parsed = JSON.parse(raw) as unknown;
+
+    if (!Array.isArray(parsed)) {
+      return [] as SavedView[];
+    }
+
+    return parsed.filter(isSavedView);
+  } catch {
+    return [] as SavedView[];
+  }
+}
+
+function loadStoredSession() {
+  if (typeof window === "undefined") {
+    return null as SavedView | null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(SESSION_VIEW_KEY);
+
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw) as unknown;
+    return isSavedView(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 function getValueLabel(aggregation: AggregationType, yColumn: string) {
   if (aggregation === "count") {
     return "件数";
@@ -56,6 +136,10 @@ export default function HomePage() {
   const [yColumn, setYColumn] = useState("");
   const [aggregation, setAggregation] = useState<AggregationType>("count");
   const [chartType, setChartType] = useState<ChartType>("bar");
+  const [viewName, setViewName] = useState("");
+  const [savedViews, setSavedViews] = useState<SavedView[]>([]);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [isHydrated, setIsHydrated] = useState(false);
 
   const aggregatedData = aggregateData(rows, {
     aggregation,
@@ -66,6 +150,102 @@ export default function HomePage() {
   const isReady = columns.length > 0;
   const chartOptionLabel =
     chartOptions.find((option) => option.value === chartType)?.label ?? chartType;
+
+  useEffect(() => {
+    const nextSavedViews = loadStoredViews(SAVED_VIEWS_KEY);
+    const sessionView = loadStoredSession();
+
+    setSavedViews(nextSavedViews);
+
+    if (sessionView) {
+      setRows(sessionView.rows);
+      setColumns(sessionView.columns);
+      setFileName(sessionView.fileName);
+      setXColumn(sessionView.xColumn);
+      setYColumn(sessionView.yColumn);
+      setAggregation(sessionView.aggregation);
+      setChartType(sessionView.chartType);
+      setParseMessage(`前回の作業内容「${sessionView.name}」を復元しました。`);
+      setViewName(sessionView.name);
+    }
+
+    setIsHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isHydrated || !isReady || typeof window === "undefined") {
+      return;
+    }
+
+    const sessionView: SavedView = {
+      id: "session",
+      name: viewName.trim() || "前回の作業",
+      fileName,
+      rows,
+      columns,
+      xColumn,
+      yColumn,
+      aggregation,
+      chartType,
+      updatedAt: new Date().toISOString(),
+    };
+
+    window.localStorage.setItem(SESSION_VIEW_KEY, JSON.stringify(sessionView));
+  }, [aggregation, chartType, columns, fileName, isHydrated, isReady, rows, viewName, xColumn, yColumn]);
+
+  useEffect(() => {
+    if (!isHydrated || typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(SAVED_VIEWS_KEY, JSON.stringify(savedViews));
+  }, [isHydrated, savedViews]);
+
+  const applyView = (view: SavedView) => {
+    setRows(view.rows);
+    setColumns(view.columns);
+    setFileName(view.fileName);
+    setXColumn(view.xColumn);
+    setYColumn(view.yColumn);
+    setAggregation(view.aggregation);
+    setChartType(view.chartType);
+    setViewName(view.name);
+    setParseMessage(`保存済みビュー「${view.name}」を読み込みました。`);
+  };
+
+  const handleSaveView = () => {
+    const trimmedName = viewName.trim();
+
+    if (!isReady || !trimmedName) {
+      return;
+    }
+
+    const nextView: SavedView = {
+      id: trimmedName,
+      name: trimmedName,
+      fileName,
+      rows,
+      columns,
+      xColumn,
+      yColumn,
+      aggregation,
+      chartType,
+      updatedAt: new Date().toISOString(),
+    };
+
+    setSavedViews((currentViews) => {
+      const remainingViews = currentViews.filter((view) => view.id !== nextView.id);
+      return [nextView, ...remainingViews].sort((left, right) =>
+        right.updatedAt.localeCompare(left.updatedAt),
+      );
+    });
+    setSaveMessage(`ビュー「${trimmedName}」を保存しました。`);
+  };
+
+  const handleDeleteView = (viewId: string) => {
+    setSavedViews((currentViews) => currentViews.filter((view) => view.id !== viewId));
+    setSaveMessage("保存済みビューを削除しました。");
+  };
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -102,6 +282,7 @@ export default function HomePage() {
         setYColumn(nextYColumn);
         setAggregation("count");
         setChartType("bar");
+        setSaveMessage(null);
 
         if (results.errors.length > 0) {
           setParseMessage(`一部の行を読み飛ばしました: ${results.errors[0]?.message ?? "不明な解析エラー"}`);
@@ -279,10 +460,85 @@ export default function HomePage() {
       <section className="panel">
         <div className="section-heading">
           <div>
-            <span className="eyebrow">3. 結果</span>
+            <span className="eyebrow">3. 保存</span>
+            <h2>ビューを保存する</h2>
+          </div>
+          <span className="status-chip">{savedViews.length.toLocaleString()} 件</span>
+        </div>
+
+        <div className="save-view-grid">
+          <label className="control">
+            <span>ビュー名</span>
+            <input
+              className="text-input"
+              disabled={!isReady}
+              onChange={(event) => setViewName(event.target.value)}
+              placeholder="例: 売上サマリー"
+              type="text"
+              value={viewName}
+            />
+          </label>
+
+          <button
+            className="primary-action"
+            disabled={!isReady || !viewName.trim()}
+            onClick={handleSaveView}
+            type="button"
+          >
+            現在のビューを保存
+          </button>
+        </div>
+
+        <p className="supporting-text">
+          保存したビューはこのブラウザ内だけに保持されます。次回アクセス時は前回の作業内容も自動復元されます。
+        </p>
+
+        <p className="message">{saveMessage ?? "ビュー名を付けると、現在のCSVと表示設定を保存できます。"}</p>
+
+        {savedViews.length === 0 ? (
+          <div className="placeholder compact-placeholder">
+            <p>まだ保存済みビューはありません。</p>
+          </div>
+        ) : (
+          <div className="saved-view-list">
+            {savedViews.map((view) => (
+              <article className="saved-view-card" key={view.id}>
+                <div className="saved-view-copy">
+                  <strong>{view.name}</strong>
+                  <span>{view.fileName || "ファイル名なし"}</span>
+                  <span>
+                    {view.columns.length.toLocaleString()} カラム ・ {view.rows.length.toLocaleString()} 行
+                  </span>
+                </div>
+                <div className="saved-view-actions">
+                  <button
+                    className="secondary-action"
+                    onClick={() => applyView(view)}
+                    type="button"
+                  >
+                    読み込む
+                  </button>
+                  <button
+                    className="ghost-action"
+                    onClick={() => handleDeleteView(view.id)}
+                    type="button"
+                  >
+                    削除
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="panel">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">4. 結果</span>
             <h2>表示結果</h2>
           </div>
-          {isReady ? <span className="status-chip">{chartType.toUpperCase()}</span> : null}
+          {isReady ? <span className="status-chip">{chartOptionLabel}</span> : null}
         </div>
 
         {!isReady ? (
@@ -306,7 +562,7 @@ export default function HomePage() {
               chartType={chartType}
               data={aggregatedData}
               valueLabel={getValueLabel(aggregation, yColumn)}
-              xLabel={xColumn || "Category"}
+              xLabel={xColumn || "カテゴリ"}
             />
           </>
         )}
