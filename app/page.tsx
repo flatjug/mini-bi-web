@@ -697,28 +697,60 @@ export default function HomePage() {
             </div>
           </div>
         ) : (
-          <div className="chart-grid">
-            {chartLayout.map((chartType, index) => (
-              <section className="chart-window" key={`${chartType}-${index}`}>
-                <div className="chart-window-bar">
-                  <div>
-                    <span>グラフ {index + 1}</span>
-                    <strong>{getChartOptionLabel(chartType)}</strong>
+          <>
+            <div className="chart-grid">
+              {chartLayout.map((chartType, index) => (
+                <section className="chart-window" key={`${chartType}-${index}`}>
+                  <div className="chart-window-bar">
+                    <div>
+                      <span>グラフ {index + 1}</span>
+                      <strong>{getChartOptionLabel(chartType)}</strong>
+                    </div>
+                    <span className="chart-window-meta">
+                      {xColumn || "カテゴリ"} /{" "}
+                      {aggregationOptions.find((option) => option.value === aggregation)?.label}
+                    </span>
                   </div>
-                  <span className="chart-window-meta">
-                    {xColumn || "カテゴリ"} /{" "}
-                    {aggregationOptions.find((option) => option.value === aggregation)?.label}
-                  </span>
+                  <div className="chart-window-toolbar">
+                    {chartOptions.map((option) => (
+                      <button
+                        className={`toolbar-chip ${chartType === option.value ? "toolbar-chip-active" : ""}`}
+                        key={`${index}-${option.value}`}
+                        onClick={() => updateChartSlot(index, option.value)}
+                        type="button"
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                  <ChartDisplay
+                    chartType={chartType}
+                    data={aggregatedData}
+                    valueLabel={getValueLabel(aggregation, yColumn)}
+                    xLabel={xColumn || "カテゴリ"}
+                  />
+                </section>
+              ))}
+            </div>
+
+            <section className="table-dock">
+              <div className="table-dock-bar">
+                <div>
+                  <span>集計テーブル</span>
+                  <strong>数値確認用</strong>
                 </div>
-                <ChartDisplay
-                  chartType={chartType}
-                  data={aggregatedData}
-                  valueLabel={getValueLabel(aggregation, yColumn)}
-                  xLabel={xColumn || "カテゴリ"}
-                />
-              </section>
-            ))}
-          </div>
+                <span className="chart-window-meta">
+                  {aggregatedData.length.toLocaleString()} グループ
+                </span>
+              </div>
+              <ChartDisplay
+                chartType="table"
+                data={aggregatedData}
+                valueLabel={getValueLabel(aggregation, yColumn)}
+                xLabel={xColumn || "カテゴリ"}
+              />
+            </section>
+          </>
         )}
       </section>
     </main>
